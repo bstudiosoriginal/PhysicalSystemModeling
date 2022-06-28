@@ -622,12 +622,13 @@ if __name__ == '__main__':
     y = Variable('y', 19)
     k = Variable('k', 2)
     
-    eqn = Exp(1)-Exp(Cos(Sin(Tan(x))))
+    eqn = (0.5*x**2 * Log(x) - 0.5*1.5*x**2)
     print(eqn)
-    print(eqn.differentiate('x'))
-    z = eqn.zeros_of_one_d_function('x')
-    print(z)
-    x.value = z
+    n = eqn.differentiate('x')
+    print(n)
+    u = n.differentiate('x')
+    print(u)
+    print(type(n), u.solve(), math.log(4))
     # print(eqn.expand(0, 1, 0.01))
 
     
