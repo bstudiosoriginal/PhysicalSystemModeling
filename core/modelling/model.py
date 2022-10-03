@@ -51,19 +51,26 @@ class Port(ModelBase):
 
     def __init__(self, name) -> None:
         super().__init__(name)
-        self._value = Inf()
 
 
 class InPort(Port):
 
     def __init__(self, name='inport_0') -> None:
         super().__init__(name)
+        self.signal = None
 
+    def attach(self, signal):
+        self.signal = signal
+        
 
 class OutPort(Port):
 
     def __init__(self, name='outport_0') -> None:
         super().__init__(name)
+        self.signal = None
+
+    def attach(self, signal):
+        self.signal = signal
 
 
 class Signal(ModelBase):
@@ -73,9 +80,9 @@ class Signal(ModelBase):
         self._source = source
         self._sinks = []
     
-    def push(self, value):
-        for port in self._sinks:
-            port.value = value
+    def _propagate(self, value):
+        for block in self._sinks:
+            block._propagate(value)
 
 
 class SignalMergeUnmerge(ModelBase):
@@ -85,7 +92,9 @@ class SignalMergeUnmerge(ModelBase):
         self._n_inputs = n_inputs
         self._n_outputs = n_outputs
         self._inports = {}
+        self._listed_inports = []
         self._outports = {}
+        self._listed_outports = []
 
     def _set_n_inputs(self, value):
         self.n_outputs = value
@@ -105,46 +114,70 @@ class SignalMergeUnmerge(ModelBase):
         for n in range(number):
             port = InPort(f'{self.name}/inport_{n}')
             self._inports[port.name] = port
+            self._listed_inports.append(port)
 
     def create_outports(self, number):
         for n in range(number):
             port = OutPort(f'{self.name}/outport_{n}')
             self._inports[port.name] = port
+            self._listed_outports.append(port)
 
 
 class Mux(SignalMergeUnmerge):
     
-    def __init__(self, name='mux_0', n_inputs=2, n_outputs=1) -> None:
-        super().__init__(name, n_inputs, n_outputs)
+    def __init__(self, sink, name='mux_0', n_inputs=2,) -> None:
+        super().__init__(name, n_inputs, 1)
 
     def set_n_inputs(self, value):
         self._set_n_inputs(value)
 
-    def push(self):
-        out = numpy.array([i.value for i in self._inports])
+    def _propagate(self, *v):
+        out = numpy.array([i.value for i in self._listed_inports.signal.value])
+        for port in self._listed_outports:
+            port._propagate(out)
 
 
-class DeMux(object):
+class DeMux(SignalMergeUnmerge):
 
-    def __init__(self, name='demux_0', n_inputs=2, n_outputs=1) -> None:
-        super().__init__(name, n_inputs, n_outputs)
+    def __init__(self, name='demux_0', n_outputs=1) -> None:
+        super().__init__(name, 1, n_outputs)
 
     def set_n_outputs(self, value):
         self._set_n_outputs(value)
 
+    def _propagate(self, *v):
+        out = self._inports[0]
+        for port in self._listed_outports:
+            port._propagate(out)  
+
+
 
 class Block(ModelBase):
-
-    sources = None
-
-    sinks = None
 
     """
     Use the port system to create conection points for other blocks. A signal object 
     """
 
     def __init__(self, name, from_file=None) -> None:
+        self.sources = {}
+        self.sinks = {}
+        self.value = None
         super().__init__(name)
+
+    def attach(self, block, as_source=True):
+        if as_source == True:
+            self.sources[block.name] = block
+        else:
+            self.sinks[block.name] = block
+
+    def operate(self, value):
+        self.value = value
+        raise NotImplementedError()
+
+    def _propagate(self, value):
+        self.operate(value)
+        for sink in self.sinks:
+            sink.propagate(self.value)
 
 
 class Model(ModelBase):

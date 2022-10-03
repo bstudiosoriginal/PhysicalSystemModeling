@@ -4,7 +4,122 @@ import warnings
 import copy
 
 import numpy
-    
+
+
+class NumericalIntegral(object):
+
+    def __init__(self, eqn, limits) -> None:
+        self._equation = None
+        self._limits = None
+        self._variables = set()
+        self.equation = eqn
+        self.limits = limits
+
+    @property
+    def equation(self):
+        return self._equation
+
+    @equation.setter
+    def equation(self, val):
+        if isinstance(val, Equation):
+            self._equation = val
+
+    @property
+    def limits(self):
+        return self._limits
+
+    @limits.setter
+    def limits(self, val):
+        if isinstance(val, (list, tuple)):
+            for v in val:
+                print(v)
+                self._variables.add(v[0])
+            self._limits = val
+
+    def integrate1D(self, var, equation, n_terms, method='trapz'):
+        if isinstance(equation, (float, tuple)):
+            equation = equation*(var[1][0] - var[1][1])
+
+        elif var[0] not in equation.variables:
+            equation = (var[1][0] - var[1][1])*equation
+            if isinstance(equation, Equation):
+                equation.reimplement_variables()
+                equation.update_variables()
+        elif method == 'trapz':
+            h = (var[1][0] - var[1][1]) / n_terms
+            divisions = [h*(i) for i in range(n_terms+1)]
+            var_solution = []
+            for n in range(len(divisions)):
+                equation.variables[var[0]].value = divisions[n]
+                if isinstance(equation, Equation):
+                    sol = equation.solve()
+                else:
+                    sol = equation
+                # print(sol)
+                if n == 0 or n == len(divisions)-1:
+                    
+                    var_solution.append( sol  )
+                else:
+                    var_solution.append( 2*sol )
+            solution = sum(var_solution) * h / 2
+            # print(solution, 'sol')
+            equation = solution
+        elif method == 'simpson13':
+            if n_terms % 2 != 0:
+                n_terms += 1
+            
+            h = (var[1][0] - var[1][1]) / n_terms
+            divisions = [h*(i) for i in range(n_terms+1)]
+            var_solution = []
+            for n in range(len(divisions)):
+                equation.variables[var[0]].value = divisions[n]
+                
+                if isinstance(equation, Equation):
+                    sol = equation.solve()
+                else:
+                    sol = equation
+                # print(sol)
+                if n == 0 or n == len(divisions) -1:
+
+                    var_solution.append( sol  )
+                else:
+                    if n % 2 == 0:
+                        var_solution.append( 2*sol )
+                    elif n % 2 != 0:
+                        var_solution.append( 4*sol )
+            solution = sum(var_solution) * h / 3
+            
+            equation = solution
+        elif method == 'simpson38':
+            if n_terms % 3 != 0:
+                n_terms = (n_terms // 3) * 3
+            h = (var[1][0] - var[1][1]) / n_terms
+            divisions = [h*(i) for i in range(n_terms+1)]
+            print(var, equation.terms, h)
+            # print(divisions)
+            var_solution = []
+            for n in range(len(divisions)):
+                equation.variables[var[0]].value = divisions[n]
+                if isinstance(equation, Equation):
+                    sol = equation.solve()
+                else:
+                    sol = equation
+                if n == 0 or n == len(divisions) -1:
+
+                    var_solution.append( sol  )
+                else:
+                    if n % 3 == 0:
+                        var_solution.append( 2*sol )
+                    else:
+                        var_solution.append( 3*sol )
+            solution = 3 * sum(var_solution) * h / 8
+            equation = solution
+        
+        return equation
+
+    def integrate(self, n_terms=10, method='trapz', equation=None, limits=None):
+        pass 
+        
 
 class Equation(object):
 
@@ -15,6 +130,9 @@ class Equation(object):
             self.update_variables()
         self.value = None
         self.operation = operation
+    
+    def __str__(self) -> str:
+        return repr(self)
 
     def update_variables(self):
         for i in self.terms:
@@ -29,7 +147,7 @@ class Equation(object):
             if isinstance(self.terms[i], Variable):
                 self.terms[i] = self.variables[self.terms[i].name]
             elif isinstance(self.terms[i], Equation):
-                for j in i.variables:
+                for j in self.terms[i].variables:
                     self.terms[i].variables[j] = self.variables[j] 
 
     def __add__(self, other):
@@ -167,6 +285,9 @@ class Equation(object):
         elif self.operation == '^':
             return value[0]**value[1]
 
+    def mdimsolve(self):
+        pass
+
     def operate(self):
         operands = []
 
@@ -298,15 +419,17 @@ class Equation(object):
             vars_val.append(numpy.fromiter((self.set_and_solve(i, var) for i in x), numpy.float64))
         return step, x, numpy.array(*vars_val)
 
+    def integrate(self, limits):
+        return
 
     def set_and_solve(self, value, var):
         var.value = value
         return self.solve()
 
-
-
     def __repr__(self) -> str:
         return str(self.parse('name'))
+    
+    
 
     # def __deepcopy__(self, memo):
     #     # create a copy with self.linked_to *not copied*, just referenced.
@@ -591,6 +714,12 @@ class Exp(Equation):
             return self * self.terms[0].differentiate(i)
         else:
             return 0
+    
+    def integrateee(self, i):
+        if i in self.variables and isinstance(self.terms[0], (Equation, Variable)):
+            return self * self.terms[0].integrate(i)
+        else:
+            return 0
 
 class Log(Equation):
 
@@ -614,21 +743,42 @@ class Log(Equation):
             return self.terms[0].differentiate(i) / self.terms[0]
         else:
             return 0
+    
+    
 
 
 if __name__ == '__main__':
     # Test
     x = Variable('x', 4)
-    y = Variable('y', 19)
+    y = Variable('y', 3)
     k = Variable('k', 2)
     
-    eqn = (0.5*x**2 * Log(x) - 0.5*1.5*x**2)
-    print(eqn)
-    n = eqn.differentiate('x')
-    print(n)
-    u = n.differentiate('x')
-    print(u)
-    print(type(n), u.solve(), math.log(4))
+    eqn = (0.5*x**2+4)
+    eqn2 = eqn * (2*x)
+    eqn3 = 2*x*eqn
+
+    # print(eqn.solve())
+    # print(eqn2.solve())
+    # print(eqn2)
+    # print(eqn3.solve())
+    # print(eqn3)
+
+    # print(eqn)
+    # n = eqn.differentiate('x')
+    print(eqn.solve())
+    i = NumericalIntegral()
+    S = i.integrate1D(n_terms=20, method='simpson38', var=('x', [0, 10]), equation=eqn)
+    print(S)
+
+    # eqn = eqn*(2*x)
+    # print(eqn.solve())
+    # i = eqn.integrate([('x', [1, 0])])
+    # S = i.integrate(n_terms=20, method='simpson38')
+    # print(S)
+    # # u = n.differentiate('x')
+    # print(u)
+    
+    # print(n, math.log(4))
     # print(eqn.expand(0, 1, 0.01))
 
     
